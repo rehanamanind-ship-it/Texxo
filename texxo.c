@@ -1,64 +1,8 @@
-/*
- * Texxo Pro - Advanced Text Editor in C (GTK+ 3)
- * Compile with:
- *   gcc -o texxo texxo.c `pkg-config --cflags --libs gtk+-3.0` -lm
- * Requires GTK 3 development libraries and pkg-config.
- */
-
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <math.h>
-
-/* ----- Application Data Structure ----- */
-typedef struct {
-    GtkWidget *window;
-    GtkWidget *main_vbox;
-    
-    /* Menu & Toolbar */
-    GtkWidget *menubar;
-    GtkWidget *toolbar;
-    
-    /* Command entry */
-    GtkWidget *cmd_entry;
-    
-    /* Status bar */
-    GtkWidget *status_label;
-    GtkWidget *status_bar;
-    
-    /* Text area */
-    GtkWidget *line_numbers_view;
-    GtkWidget *text_view;
-    GtkTextBuffer *text_buffer;
-    
-    /* Scroll */
-    GtkWidget *scrolled_window;
-    
-    /* Font */
-    PangoFontDescription *default_font;
-    
-    /* History */
-    GList *command_history;
-    int history_index;
-    
-    /* Current file */
-    char *current_file;
-    
-    /* Theme (0=dark, 1=light) */
-    int theme;
-    
-    /* Image counter */
-    int image_counter;
-    
-    /* Bookmark list */
-    GHashTable *bookmarks;
-    
-    /* Find text */
-    char *last_search;
-    
-} TexxoEditor;
 
 /* ----- Color Map (name -> hex) ----- */
 typedef struct {
@@ -77,7 +21,6 @@ static const ColorEntry color_map[] = {
     {"olive", "#808000"}, {"plum", "#dda0dd"}, {"salmon", "#fa8072"},
     {"sienna", "#a0522d"}, {"tan", "#d2b48c"}, {"tomato", "#ff6347"},
     {"turquoise", "#40e0d0"}, {"violet", "#ee82ee"},
-    /* Material colors */
     {"md-red","#f44336"}, {"md-pink","#e91e63"}, {"md-purple","#9c27b0"},
     {"md-deep-purple","#673ab7"}, {"md-indigo","#3f51b5"}, {"md-blue","#2196f3"},
     {"md-light-blue","#03a9f4"}, {"md-cyan","#00bcd4"}, {"md-teal","#009688"},
@@ -85,11 +28,9 @@ static const ColorEntry color_map[] = {
     {"md-yellow","#ffeb3b"}, {"md-amber","#ffc107"}, {"md-orange","#ff9800"},
     {"md-deep-orange","#ff5722"}, {"md-brown","#795548"}, {"md-grey","#9e9e9e"},
     {"md-blue-grey","#607d8b"},
-    /* Pastel */
     {"pastel-pink","#ffd1dc"}, {"pastel-blue","#aec6cf"}, {"pastel-green","#77dd77"},
     {"pastel-yellow","#fdfd96"}, {"pastel-purple","#b39eb5"}, {"pastel-orange","#ffb347"},
     {"pastel-mint","#98fb98"}, {"pastel-lavender","#e6e6fa"},
-    /* Neon */
     {"neon-pink","#ff6ec7"}, {"neon-blue","#4d4dff"}, {"neon-green","#39ff14"},
     {"neon-yellow","#ffff00"}, {"neon-orange","#ff6600"}, {"neon-purple","#9d00ff"},
     {"neon-cyan","#00ffff"},
@@ -113,6 +54,25 @@ static const FontEntry font_map[] = {
     {NULL, 0}
 };
 
+/* ----- Application Data Structure ----- */
+typedef struct {
+    GtkWidget *window;
+    GtkWidget *main_vbox;
+    GtkWidget *cmd_entry;
+    GtkWidget *status_label;
+    GtkWidget *status_bar;
+    GtkWidget *line_numbers_view;
+    GtkWidget *text_view;
+    GtkTextBuffer *text_buffer;
+    GtkWidget *scrolled_window;
+    PangoFontDescription *default_font;
+    int image_counter;
+    GHashTable *bookmarks;
+    char *current_file;
+    int theme;   // 0=dark, 1=light
+    char *last_search;
+} TexxoEditor;
+
 /* ----- Utility Functions ----- */
 static GdkRGBA hex_to_rgba(const char *hex) {
     GdkRGBA color;
@@ -125,25 +85,19 @@ static const char* lookup_color(const char *name) {
         if (strcasecmp(name, color_map[i].name) == 0)
             return color_map[i].hex;
     }
-    /* If it's a hex code starting with #, return as is */
     if (name[0] == '#') return name;
     return "#61afef"; /* default blue */
 }
 
 static void update_line_numbers(TexxoEditor *app) {
-    GtkTextIter iter;
     int line_count = gtk_text_buffer_get_line_count(app->text_buffer);
-    char *numbers = g_strdup("");
+    GString *numbers = g_string_new("");
     for (int i = 1; i <= line_count; i++) {
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%d\n", i);
-        char *tmp = g_strconcat(numbers, buf, NULL);
-        g_free(numbers);
-        numbers = tmp;
+        g_string_append_printf(numbers, "%d\n", i);
     }
     GtkTextBuffer *buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(app->line_numbers_view));
-    gtk_text_buffer_set_text(buf, numbers, -1);
-    g_free(numbers);
+    gtk_text_buffer_set_text(buf, numbers->str, -1);
+    g_string_free(numbers, TRUE);
 }
 
 static void update_status(TexxoEditor *app, const char *msg, gboolean error) {
@@ -154,61 +108,62 @@ static void update_status(TexxoEditor *app, const char *msg, gboolean error) {
 }
 
 static void update_status_bar(TexxoEditor *app) {
-    GtkTextIter iter;
-    gtk_text_buffer_get_iter_at_mark(app->text_buffer, &iter,
-                                     gtk_text_buffer_get_insert(app->text_buffer));
-    int line = gtk_text_iter_get_line(&iter) + 1;
-    int col = gtk_text_iter_get_line_offset(&iter) + 1;
-    
-    char *text = gtk_text_buffer_get_text(app->text_buffer, 
-                                          gtk_text_buffer_get_start_iter(app->text_buffer),
-                                          gtk_text_buffer_get_end_iter(app->text_buffer), FALSE);
+    GtkTextIter start_iter, end_iter;
+    gtk_text_buffer_get_start_iter(app->text_buffer, &start_iter);
+    gtk_text_buffer_get_end_iter(app->text_buffer, &end_iter);
+    char *text = gtk_text_buffer_get_text(app->text_buffer, &start_iter, &end_iter, FALSE);
+
     int lines = gtk_text_buffer_get_line_count(app->text_buffer);
     int words = 0;
-    int chars = strlen(text);
     char *tmp = g_strdup(text);
     char *token = strtok(tmp, " \t\n");
     while (token) { words++; token = strtok(NULL, " \t\n"); }
     g_free(tmp);
-    g_free(text);
-    
+
+    GtkTextIter cursor;
+    gtk_text_buffer_get_iter_at_mark(app->text_buffer, &cursor,
+                                     gtk_text_buffer_get_insert(app->text_buffer));
+    int line = gtk_text_iter_get_line(&cursor) + 1;
+    int col = gtk_text_iter_get_line_offset(&cursor) + 1;
+
     char buf[256];
-    snprintf(buf, sizeof(buf), "Lines: %d | Words: %d | Characters: %d | Position: %d:%d",
-             lines, words, chars, line, col);
+    snprintf(buf, sizeof(buf), "Lines: %d | Words: %d | Characters: %ld | Position: %d:%d",
+             lines, words, strlen(text), line, col);
     gtk_label_set_text(GTK_LABEL(app->status_bar), buf);
+    g_free(text);
 }
 
-/* ----- Command Handler ----- */
+/* ----- Formatting Functions ----- */
 static void apply_bold(TexxoEditor *app) {
     GtkTextIter start, end;
-    if (!gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end))
-        return;
-    gtk_text_buffer_apply_tag_by_name(app->text_buffer, "bold", &start, &end);
-    update_status(app, "Applied bold", FALSE);
+    if (gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end)) {
+        gtk_text_buffer_apply_tag_by_name(app->text_buffer, "bold", &start, &end);
+        update_status(app, "Applied bold", FALSE);
+    }
 }
 
 static void apply_italic(TexxoEditor *app) {
     GtkTextIter start, end;
-    if (!gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end))
-        return;
-    gtk_text_buffer_apply_tag_by_name(app->text_buffer, "italic", &start, &end);
-    update_status(app, "Applied italic", FALSE);
+    if (gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end)) {
+        gtk_text_buffer_apply_tag_by_name(app->text_buffer, "italic", &start, &end);
+        update_status(app, "Applied italic", FALSE);
+    }
 }
 
 static void apply_underline(TexxoEditor *app) {
     GtkTextIter start, end;
-    if (!gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end))
-        return;
-    gtk_text_buffer_apply_tag_by_name(app->text_buffer, "underline", &start, &end);
-    update_status(app, "Applied underline", FALSE);
+    if (gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end)) {
+        gtk_text_buffer_apply_tag_by_name(app->text_buffer, "underline", &start, &end);
+        update_status(app, "Applied underline", FALSE);
+    }
 }
 
 static void apply_strikethrough(TexxoEditor *app) {
     GtkTextIter start, end;
-    if (!gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end))
-        return;
-    gtk_text_buffer_apply_tag_by_name(app->text_buffer, "strikethrough", &start, &end);
-    update_status(app, "Applied strikethrough", FALSE);
+    if (gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end)) {
+        gtk_text_buffer_apply_tag_by_name(app->text_buffer, "strikethrough", &start, &end);
+        update_status(app, "Applied strikethrough", FALSE);
+    }
 }
 
 static void apply_color(TexxoEditor *app, const char *color_name) {
@@ -271,7 +226,6 @@ static void apply_font_size(TexxoEditor *app, int size) {
 }
 
 static void apply_font_style(TexxoEditor *app, const char *style) {
-    /* style corresponds to a key in font_map */
     for (int i = 0; font_map[i].name; i++) {
         if (strcasecmp(style, font_map[i].name) == 0) {
             GtkTextIter start, end;
@@ -354,20 +308,10 @@ static void outdent_selection(TexxoEditor *app) {
 
 static void clear_formatting(TexxoEditor *app) {
     GtkTextIter start, end;
-    if (!gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end))
-        return;
-    gtk_text_buffer_remove_all_tags(app->text_buffer, &start, &end);
-    update_status(app, "Cleared formatting", FALSE);
-}
-
-static void undo(TexxoEditor *app) {
-    gtk_text_buffer_undo(app->text_buffer);
-    update_status(app, "Undo", FALSE);
-}
-
-static void redo(TexxoEditor *app) {
-    gtk_text_buffer_redo(app->text_buffer);
-    update_status(app, "Redo", FALSE);
+    if (gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end)) {
+        gtk_text_buffer_remove_all_tags(app->text_buffer, &start, &end);
+        update_status(app, "Cleared formatting", FALSE);
+    }
 }
 
 static void new_document(TexxoEditor *app) {
@@ -429,9 +373,10 @@ static void save_file(TexxoEditor *app, const char *filename) {
         gtk_widget_destroy(dialog);
         return;
     }
-    GtkTextIter start, end;
-    gtk_text_buffer_get_bounds(app->text_buffer, &start, &end);
-    char *text = gtk_text_buffer_get_text(app->text_buffer, &start, &end, FALSE);
+    GtkTextIter start_iter, end_iter;
+    gtk_text_buffer_get_start_iter(app->text_buffer, &start_iter);
+    gtk_text_buffer_get_end_iter(app->text_buffer, &end_iter);
+    char *text = gtk_text_buffer_get_text(app->text_buffer, &start_iter, &end_iter, FALSE);
     if (g_file_set_contents(filename, text, -1, NULL)) {
         g_free(app->current_file);
         app->current_file = g_strdup(filename);
@@ -443,7 +388,6 @@ static void save_file(TexxoEditor *app, const char *filename) {
     g_free(text);
 }
 
-/* Insert image from file */
 static void insert_image(TexxoEditor *app, const char *path) {
     if (!path) {
         GtkWidget *dialog = gtk_file_chooser_dialog_new("Insert Image",
@@ -472,14 +416,11 @@ static void insert_image(TexxoEditor *app, const char *path) {
         g_error_free(error);
         return;
     }
-    /* Scale large images to fit width */
     int width = gdk_pixbuf_get_width(pixbuf);
-    int height = gdk_pixbuf_get_height(pixbuf);
-    int max_width = 700;
-    if (width > max_width) {
-        double ratio = (double)max_width / width;
-        int new_height = (int)(height * ratio);
-        GdkPixbuf *scaled = gdk_pixbuf_scale_simple(pixbuf, max_width, new_height,
+    if (width > 700) {
+        int height = gdk_pixbuf_get_height(pixbuf);
+        double ratio = 700.0 / width;
+        GdkPixbuf *scaled = gdk_pixbuf_scale_simple(pixbuf, 700, (int)(height * ratio),
                                                      GDK_INTERP_BILINEAR);
         g_object_unref(pixbuf);
         pixbuf = scaled;
@@ -496,22 +437,13 @@ static void insert_image(TexxoEditor *app, const char *path) {
 
 /* ----- Command Parsing ----- */
 static void execute_command(TexxoEditor *app, const char *cmd) {
-    /* Add to history */
-    app->command_history = g_list_prepend(app->command_history, g_strdup(cmd));
-    if (g_list_length(app->command_history) > 50) {
-        GList *last = g_list_last(app->command_history);
-        g_free(last->data);
-        app->command_history = g_list_delete_link(app->command_history, last);
-    }
-    app->history_index = -1;
-    
     char *cmd_copy = g_strdup(cmd);
     char *token = strtok(cmd_copy, " ");
     if (!token) { g_free(cmd_copy); return; }
-    
-    char *args = cmd_copy + strlen(token) + 1; /* rest of string */
+
+    char *args = cmd_copy + strlen(token) + 1;
     while (*args == ' ') args++;
-    
+
     /* Map commands */
     if (strcasecmp(token, "bo") == 0 || strcasecmp(token, "bold") == 0)
         apply_bold(app);
@@ -545,10 +477,6 @@ static void execute_command(TexxoEditor *app, const char *cmd) {
         outdent_selection(app);
     else if (strcasecmp(token, "rm") == 0 || strcasecmp(token, "reset") == 0)
         clear_formatting(app);
-    else if (strcasecmp(token, "undo") == 0)
-        undo(app);
-    else if (strcasecmp(token, "redo") == 0)
-        redo(app);
     else if (strcasecmp(token, "new") == 0)
         new_document(app);
     else if (strcasecmp(token, "open") == 0)
@@ -558,7 +486,6 @@ static void execute_command(TexxoEditor *app, const char *cmd) {
     else if (strcasecmp(token, "img") == 0 || strcasecmp(token, "image") == 0)
         insert_image(app, args);
     else if (strcasecmp(token, "find") == 0) {
-        /* Simple find forward */
         GtkTextIter start, match_start, match_end;
         gtk_text_buffer_get_iter_at_mark(app->text_buffer, &start,
                                          gtk_text_buffer_get_insert(app->text_buffer));
@@ -573,14 +500,13 @@ static void execute_command(TexxoEditor *app, const char *cmd) {
         }
     }
     else if (strcasecmp(token, "replace") == 0) {
-        /* format: replace old new */
         char *old_text = strtok(args, " ");
         char *new_text = strtok(NULL, "");
         if (old_text && new_text) {
             GtkTextIter start, end;
             if (gtk_text_buffer_get_selection_bounds(app->text_buffer, &start, &end)) {
                 char *sel = gtk_text_buffer_get_text(app->text_buffer, &start, &end, FALSE);
-                char *rep = g_strjoinv(new_text, g_strsplit(sel, old_text, -1)); /* simplified */
+                char *rep = g_strjoinv(new_text, g_strsplit(sel, old_text, -1));
                 gtk_text_buffer_delete(app->text_buffer, &start, &end);
                 gtk_text_buffer_insert(app->text_buffer, &start, rep, -1);
                 g_free(sel);
@@ -589,9 +515,10 @@ static void execute_command(TexxoEditor *app, const char *cmd) {
         }
     }
     else if (strcasecmp(token, "sa") == 0 || strcasecmp(token, "selectall") == 0) {
-        GtkTextIter start, end;
-        gtk_text_buffer_get_bounds(app->text_buffer, &start, &end);
-        gtk_text_buffer_select_range(app->text_buffer, &start, &end);
+        GtkTextIter start_iter, end_iter;
+        gtk_text_buffer_get_start_iter(app->text_buffer, &start_iter);
+        gtk_text_buffer_get_end_iter(app->text_buffer, &end_iter);
+        gtk_text_buffer_select_range(app->text_buffer, &start_iter, &end_iter);
     }
     else if (strcasecmp(token, "del") == 0 || strcasecmp(token, "delete") == 0) {
         GtkTextIter start, end;
@@ -625,10 +552,32 @@ static void execute_command(TexxoEditor *app, const char *cmd) {
             g_free(text);
         }
     }
-    else if (strcasecmp(token, "theme") == 0) {
-        /* theme toggle */
-        app->theme = (strcasecmp(args, "light") == 0) ? 1 : 0;
-        /* In a full implementation, change widget styles */
+    else if (strcasecmp(token, "help") == 0) {
+        gtk_text_buffer_set_text(app->text_buffer,
+            "Texxo C Edition Commands:\n"
+            "bo / bold - Bold\n"
+            "it / italic - Italic\n"
+            "ul / underline - Underline\n"
+            "st / strike - Strikethrough\n"
+            "tc / color <name|#hex> - Text color\n"
+            "hh / highlight <name|#hex> - Highlight\n"
+            "ff / font <family> - Change font family\n"
+            "fs / fontsize <size> - Change font size\n"
+            "ft / fontstyle <style> - Apply preset style\n"
+            "align <left|center|right> - Alignment\n"
+            "indent / outdent - Indent/outdent\n"
+            "rm / reset - Clear formatting\n"
+            "new - New document\n"
+            "open [file] - Open file\n"
+            "save [file] - Save file\n"
+            "img / image [file] - Insert image\n"
+            "find <text> - Find text\n"
+            "replace <old> <new> - Replace in selection\n"
+            "sa / selectall - Select all\n"
+            "del / delete - Delete selection\n"
+            "cp / copy - Copy\n"
+            "cut / paste - Cut/paste\n"
+            "help - Show this help", -1);
     }
     else {
         update_status(app, "Unknown command", TRUE);
@@ -670,80 +619,50 @@ static void create_tags(TexxoEditor *app) {
 }
 
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
-    /* This is the main function */
     TexxoEditor *app = g_new0(TexxoEditor, 1);
     app->theme = 0;
     app->bookmarks = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
-    
+
     /* Window */
     app->window = gtk_application_window_new(gtk_app);
     gtk_window_set_title(GTK_WINDOW(app->window), "Texxo Pro - C Edition");
     gtk_window_set_default_size(GTK_WINDOW(app->window), 1100, 800);
-    
+
     /* Main vertical box */
     app->main_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(app->window), app->main_vbox);
-    
-    /* Menu bar */
-    GtkWidget *menubar = gtk_menu_bar_new();
-    /* File menu */
-    GtkWidget *file_menu = gtk_menu_new();
-    GtkWidget *file_item = gtk_menu_item_new_with_label("File");
-    gtk_menu_item_set_submenu(GTK_MENU_ITEM(file_item), file_menu);
-    gtk_menu_shell_append(GTK_MENU_SHELL(menubar), file_item);
-    
-    GtkWidget *new_item = gtk_menu_item_new_with_label("New");
-    g_signal_connect_swapped(new_item, "activate", G_CALLBACK(new_document), app);
-    gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), new_item);
-    
-    GtkWidget *open_item = gtk_menu_item_new_with_label("Open");
-    g_signal_connect_swapped(open_item, "activate", G_CALLBACK(open_file), app);
-    gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), open_item);
-    
-    GtkWidget *save_item = gtk_menu_item_new_with_label("Save");
-    g_signal_connect_swapped(save_item, "activate", G_CALLBACK(save_file), app);
-    gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), save_item);
-    
-    /* Edit, Format, Image menus similar ... (abbreviated for brevity) */
-    
-    gtk_box_pack_start(GTK_BOX(app->main_vbox), menubar, FALSE, FALSE, 0);
-    
-    /* Toolbar */
-    app->toolbar = gtk_toolbar_new();
-    gtk_toolbar_set_style(GTK_TOOLBAR(app->toolbar), GTK_TOOLBAR_ICONS);
-    /* Add buttons (using stock items) */
-    GtkToolItem *new_btn = gtk_tool_button_new_from_stock(GTK_STOCK_NEW);
-    g_signal_connect_swapped(new_btn, "clicked", G_CALLBACK(new_document), app);
-    gtk_toolbar_insert(GTK_TOOLBAR(app->toolbar), new_btn, -1);
-    /* ... more buttons */
-    gtk_box_pack_start(GTK_BOX(app->main_vbox), app->toolbar, FALSE, FALSE, 0);
-    
+
     /* Command bar */
     GtkWidget *cmd_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     gtk_widget_set_margin_start(cmd_box, 10);
     gtk_widget_set_margin_end(cmd_box, 10);
-    gtk_widget_set_margin_top(cmd_box, 5);
+    gtk_widget_set_margin_top(cmd_box, 10);
     gtk_widget_set_margin_bottom(cmd_box, 5);
+
     GtkWidget *cmd_label = gtk_label_new("Command:");
     gtk_box_pack_start(GTK_BOX(cmd_box), cmd_label, FALSE, FALSE, 0);
+
     app->cmd_entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(app->cmd_entry), "Type command...");
     g_signal_connect(app->cmd_entry, "activate", G_CALLBACK(on_cmd_entry_activate), app);
     gtk_box_pack_start(GTK_BOX(cmd_box), app->cmd_entry, TRUE, TRUE, 0);
+
     GtkWidget *run_btn = gtk_button_new_with_label("Run");
     g_signal_connect_swapped(run_btn, "clicked", G_CALLBACK(on_cmd_entry_activate), app);
     gtk_box_pack_start(GTK_BOX(cmd_box), run_btn, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(app->main_vbox), cmd_box, FALSE, FALSE, 0);
-    
+
     /* Status label */
     app->status_label = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(app->status_label),
                          "<span foreground='#b7d2ff'>Ready</span>");
+    gtk_widget_set_margin_start(app->status_label, 10);
     gtk_box_pack_start(GTK_BOX(app->main_vbox), app->status_label, FALSE, FALSE, 0);
-    
+
     /* Editor area with line numbers */
     GtkWidget *hpaned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
     gtk_box_pack_start(GTK_BOX(app->main_vbox), hpaned, TRUE, TRUE, 0);
-    
+
     /* Line numbers */
     app->line_numbers_view = gtk_text_view_new();
     gtk_text_view_set_editable(GTK_TEXT_VIEW(app->line_numbers_view), FALSE);
@@ -757,47 +676,49 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
                                    GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(provider);
     gtk_paned_pack1(GTK_PANED(hpaned), app->line_numbers_view, FALSE, FALSE);
-    
+
     /* Text view */
     app->scrolled_window = gtk_scrolled_window_new(NULL, NULL);
     app->text_view = gtk_text_view_new();
     gtk_container_add(GTK_CONTAINER(app->scrolled_window), app->text_view);
     gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(app->text_view), GTK_WRAP_WORD);
     gtk_paned_pack2(GTK_PANED(hpaned), app->scrolled_window, TRUE, TRUE);
-    
+
     app->text_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(app->text_view));
     g_signal_connect(app->text_buffer, "changed", G_CALLBACK(on_text_buffer_changed), app);
     g_signal_connect(app->text_buffer, "mark-set", G_CALLBACK(update_status_bar), app);
-    
+
     /* Default font */
     app->default_font = pango_font_description_from_string("Consolas 14");
     gtk_widget_override_font(app->text_view, app->default_font);
-    
+
     create_tags(app);
-    
-    /* Status bar (bottom) */
+
+    /* Status bar */
     app->status_bar = gtk_label_new("Lines: 1 | Words: 0 | Characters: 0 | Position: 1:0");
+    gtk_label_set_xalign(GTK_LABEL(app->status_bar), 0);
+    gtk_widget_set_margin_start(app->status_bar, 10);
     gtk_box_pack_end(GTK_BOX(app->main_vbox), app->status_bar, FALSE, FALSE, 0);
-    
-    /* Apply dark theme */
+
+    /* Apply dark theme (CSS) */
     GtkCssProvider *theme_provider = gtk_css_provider_new();
     gtk_css_provider_load_from_data(theme_provider,
         "window { background-color: #071b38; }\n"
         "textview { background-color: #0f2345; color: white; }\n"
         "entry { background-color: #122846; color: white; }\n"
-        "toolbar { background-color: #0a1a3a; }\n"
+        "button { background-color: #1f508b; color: white; }\n"
         "label { color: #b7d2ff; }", -1, NULL);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
                                               GTK_STYLE_PROVIDER(theme_provider),
                                               GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
     g_object_unref(theme_provider);
-    
+
     gtk_widget_show_all(app->window);
     update_line_numbers(app);
 }
 
 int main(int argc, char **argv) {
-    GtkApplication *app = gtk_application_new("com.texxo.pro", G_APPLICATION_FLAGS_NONE);
+    GtkApplication *app = gtk_application_new("com.texxo.pro", G_APPLICATION_DEFAULT_FLAGS);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     int status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);
