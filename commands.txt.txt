@@ -1,0 +1,123 @@
+TEXXO  – COMMAND REFERENCE
+=============================
+
+All commands are typed in the command bar (press Enter to execute).
+Most formatting commands require a text selection first.
+
+────────────────────────────────────────────────────────────────────────────
+🎨 TEXT FORMATTING
+────────────────────────────────────────────────────────────────────────────
+bo  / bold           → Make selected text bold
+it  / italic         → Make selected text italic
+ul  / underline      → Underline selected text
+st  / strike         → Strikethrough selected text
+tc <color>           → Change text color (e.g., tc red, tc #ff6c6b)
+hh <color>           → Highlight text with background color
+fs <size>            → Set font size (number in points)
+ff <family>          → Change font family (e.g., ff Arial, ff Consolas)
+ft <style>           → Apply a predefined font style
+                       Styles: mono, clean, code, retro, times, comic,
+                       impact, script, gothic, and many more.
+rm  / reset          → Remove all formatting from selection
+
+────────────────────────────────────────────────────────────────────────────
+📐 LAYOUT & PARAGRAPH
+────────────────────────────────────────────────────────────────────────────
+align left           → Align selected paragraphs to the left
+align center         → Center selected paragraphs
+align right          → Align selected paragraphs to the right
+indent               → Add 4 spaces to the beginning of each selected line
+outdent              → Remove one level of indentation (4 spaces or tab)
+
+────────────────────────────────────────────────────────────────────────────
+✂️ EDITING
+────────────────────────────────────────────────────────────────────────────
+undo                 → Undo last text change
+redo                 → Redo previously undone change
+sa  / selectall      → Select all text in the document
+del  / delete        → Delete the selected text
+cp  / copy           → Copy selection to clipboard
+cut                  → Cut selection to clipboard
+paste                → Paste clipboard content at cursor position
+dupline              → Duplicate the current line
+movelineup           → Move the current line up
+movelinedown         → Move the current line down
+
+────────────────────────────────────────────────────────────────────────────
+🔍 SEARCH & REPLACE
+────────────────────────────────────────────────────────────────────────────
+find <text>          → Find and select the next occurrence of <text>
+replace <old> <new>  → Replace <old> with <new> in the entire document
+                       or within selection if text is selected
+
+────────────────────────────────────────────────────────────────────────────
+📁 FILE OPERATIONS
+────────────────────────────────────────────────────────────────────────────
+new                  → Create a new empty document
+open [file]          → Open a file (shows dialog if no path given)
+save [file]          → Save current document (shows dialog if new)
+insertfile <path>    → Insert contents of another file at cursor
+export <format>      → Export document (html, rtf)
+
+────────────────────────────────────────────────────────────────────────────
+🖼️ IMAGE
+────────────────────────────────────────────────────────────────────────────
+img  / image [path]  → Insert an image (opens file dialog if no path given)
+
+────────────────────────────────────────────────────────────────────────────
+🔢 INSERTIONS
+────────────────────────────────────────────────────────────────────────────
+date                 → Insert current date (YYYY-MM-DD)
+time                 → Insert current time (HH:MM:SS)
+datetime             → Insert date and time (YYYY-MM-DD HH:MM:SS)
+linenums             → Add line numbers to the beginning of each line
+bullets              → Add bullet points (•) before each selected line
+
+────────────────────────────────────────────────────────────────────────────
+🔤 TEXT CONVERSIONS
+────────────────────────────────────────────────────────────────────────────
+uc  / upper          → Convert selection to UPPERCASE
+lc  / lower          → Convert selection to lowercase
+caps / capitalize    → Title Case the selection
+reverse              → Reverse the characters of the selected text
+scramble             → Randomly scramble the letters of each word
+rot13                → Apply ROT13 encoding to selection
+
+────────────────────────────────────────────────────────────────────────────
+📊 STATISTICS
+────────────────────────────────────────────────────────────────────────────
+wordcount            → Count words, characters, lines, and paragraphs
+charcount            → Count characters (with and without spaces)
+
+────────────────────────────────────────────────────────────────────────────
+🎯 SPECIAL TOOLS
+────────────────────────────────────────────────────────────────────────────
+sort                 → Sort selected lines alphabetically
+shuffle              → Randomly shuffle selected lines
+unique               → Remove duplicate lines from selection
+
+────────────────────────────────────────────────────────────────────────────
+💾 SESSION & THEME
+────────────────────────────────────────────────────────────────────────────
+bookmark <name>      → Save current cursor position as a named bookmark
+goto <name>          → Jump to a previously saved bookmark
+history              → Show command history
+theme dark           → Switch to dark theme (default)
+theme light          → Switch to light theme
+
+────────────────────────────────────────────────────────────────────────────
+❓ HELP
+────────────────────────────────────────────────────────────────────────────
+help                 → Display this reference inside the editor
+
+────────────────────────────────────────────────────────────────────────────
+EXAMPLES
+────────────────────────────────────────────────────────────────────────────
+tc red               – color selected text red
+hh yellow            – highlight with yellow background
+ft comic             – apply Comic Sans style to selected text
+align center         – center the selected paragraph
+find hello           – search for “hello”
+replace cat dog      – replace all “cat” with “dog”
+bookmark start       – save a bookmark named “start”
+goto start           – jump back to that position
